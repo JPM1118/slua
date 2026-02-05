@@ -2,6 +2,7 @@ package sprites
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -9,13 +10,25 @@ import (
 	"time"
 )
 
+// Status constants used across the codebase.
+const (
+	StatusWorking     = "WORKING"
+	StatusSleeping    = "SLEEPING"
+	StatusFinished    = "FINISHED"
+	StatusWaiting     = "WAITING"
+	StatusError       = "ERROR"
+	StatusUnreachable = "UNREACHABLE"
+	StatusDestroying  = "DESTROYING"
+	StatusCreating    = "CREATING"
+)
+
 // Sprite represents a remote Fly.io Sprite instance.
 type Sprite struct {
-	ID        string
-	Name      string
-	Status    string
-	CreatedAt time.Time
-	Region    string
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	Region    string    `json:"region"`
 }
 
 // Uptime returns the duration since the Sprite was created.
@@ -48,18 +61,24 @@ type CLI struct {
 
 var _ SpriteSource = (*CLI)(nil)
 
+// ListTimeout is the default timeout for CLI.List operations.
+const ListTimeout = 10 * time.Second
+
 // spriteCmd builds a sprite command with org flag if set.
-func (c *CLI) spriteCmd(args ...string) *exec.Cmd {
+func (c *CLI) spriteCmd(ctx context.Context, args ...string) *exec.Cmd {
 	if c.Org != "" {
 		args = append([]string{"-o", c.Org}, args...)
 	}
-	return exec.Command("sprite", args...)
+	return exec.CommandContext(ctx, "sprite", args...)
 }
 
 // List returns all Sprites in the configured organization.
 // It uses `sprite api /sprites` to get JSON output.
-func (c *CLI) List() ([]Sprite, error) {
-	cmd := c.spriteCmd("api", "/sprites")
+func (c *CLI) List(ctx context.Context) ([]Sprite, error) {
+	ctx, cancel := context.WithTimeout(ctx, ListTimeout)
+	defer cancel()
+
+	cmd := c.spriteCmd(ctx, "api", "/sprites")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -122,9 +141,7 @@ func parseSpritesJSON(data []byte) ([]Sprite, error) {
 	for i, as := range apiSprites {
 		var createdAt time.Time
 		if as.CreatedAt != "" {
-			if t, err := time.Parse(time.RFC3339, as.CreatedAt); err == nil {
-				createdAt = t
-			} else if t, err := time.Parse(time.RFC3339Nano, as.CreatedAt); err == nil {
+			if t, err := time.Parse(time.RFC3339Nano, as.CreatedAt); err == nil {
 				createdAt = t
 			}
 		}
@@ -143,16 +160,16 @@ func parseSpritesJSON(data []byte) ([]Sprite, error) {
 func normalizeStatus(s string) string {
 	switch strings.ToLower(s) {
 	case "running", "started":
-		return "WORKING"
+		return StatusWorking
 	case "stopped", "suspended", "sleeping":
-		return "SLEEPING"
+		return StatusSleeping
 	case "destroyed", "destroying":
-		return "DESTROYING"
+		return StatusDestroying
 	case "creating":
-		return "CREATING"
+		return StatusCreating
 	default:
 		if s == "" {
-			return "SLEEPING"
+			return StatusSleeping
 		}
 		return strings.ToUpper(s)
 	}
@@ -161,8 +178,7 @@ func normalizeStatus(s string) string {
 // ConsoleCmd returns an *exec.Cmd for `sprite console -s <name>`.
 // The caller is responsible for setting Stdin/Stdout/Stderr and running it.
 func (c *CLI) ConsoleCmd(name string) *exec.Cmd {
-	cmd := c.spriteCmd("console", "-s", name)
-	return cmd
+	return c.spriteCmd(context.Background(), "console", "-s", name)
 }
 
 // CheckSpriteCLI verifies that the sprite CLI is installed and accessible.

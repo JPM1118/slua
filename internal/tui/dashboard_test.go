@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -17,7 +18,7 @@ type mockSource struct {
 	err     error
 }
 
-func (m *mockSource) List() ([]sprites.Sprite, error) {
+func (m *mockSource) List(_ context.Context) ([]sprites.Sprite, error) {
 	return m.sprites, m.err
 }
 
@@ -305,5 +306,29 @@ func TestUpdate_WindowResize(t *testing.T) {
 
 	if d.width != 120 || d.height != 40 {
 		t.Errorf("after resize: %dx%d, want 120x40", d.width, d.height)
+	}
+}
+
+func TestUpdate_RefreshKey(t *testing.T) {
+	src := &mockSource{sprites: []sprites.Sprite{{Name: "test"}}}
+	d := testDashboard(src, 100, 30)
+
+	updated, cmd := d.Update(keyMsg("r"))
+	d = updated.(Dashboard)
+
+	if !d.loading {
+		t.Errorf("after r: loading should be true")
+	}
+	if cmd == nil {
+		t.Fatal("r should return a command to reload sprites")
+	}
+
+	// Execute the command and verify it produces a spritesLoadedMsg
+	msg := cmd()
+	updated, _ = d.Update(msg)
+	d = updated.(Dashboard)
+
+	if d.loading {
+		t.Errorf("after refresh completes: loading should be false")
 	}
 }

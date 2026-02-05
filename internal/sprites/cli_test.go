@@ -22,8 +22,8 @@ func TestParseSpritesJSON_Array(t *testing.T) {
 	if sprites[0].Name != "my-app" {
 		t.Errorf("expected name 'my-app', got %q", sprites[0].Name)
 	}
-	if sprites[0].Status != "WORKING" {
-		t.Errorf("expected status 'WORKING', got %q", sprites[0].Status)
+	if sprites[0].Status != StatusWorking {
+		t.Errorf("expected status %q, got %q", StatusWorking, sprites[0].Status)
 	}
 	if sprites[0].Region != "ord" {
 		t.Errorf("expected region 'ord', got %q", sprites[0].Region)
@@ -35,8 +35,8 @@ func TestParseSpritesJSON_Array(t *testing.T) {
 	if sprites[1].Name != "api-dev" {
 		t.Errorf("expected name 'api-dev', got %q", sprites[1].Name)
 	}
-	if sprites[1].Status != "SLEEPING" {
-		t.Errorf("expected status 'SLEEPING', got %q", sprites[1].Status)
+	if sprites[1].Status != StatusSleeping {
+		t.Errorf("expected status %q, got %q", StatusSleeping, sprites[1].Status)
 	}
 }
 
@@ -65,8 +65,8 @@ func TestParseSpritesJSON_SpritesKey(t *testing.T) {
 	if len(sprites) != 1 {
 		t.Fatalf("expected 1 sprite, got %d", len(sprites))
 	}
-	if sprites[0].Status != "SLEEPING" {
-		t.Errorf("expected status 'SLEEPING', got %q", sprites[0].Status)
+	if sprites[0].Status != StatusSleeping {
+		t.Errorf("expected status %q, got %q", StatusSleeping, sprites[0].Status)
 	}
 }
 
@@ -95,15 +95,15 @@ func TestNormalizeStatus(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"running", "WORKING"},
-		{"started", "WORKING"},
-		{"stopped", "SLEEPING"},
-		{"suspended", "SLEEPING"},
-		{"sleeping", "SLEEPING"},
-		{"destroyed", "DESTROYING"},
-		{"destroying", "DESTROYING"},
-		{"creating", "CREATING"},
-		{"", "SLEEPING"},
+		{"running", StatusWorking},
+		{"started", StatusWorking},
+		{"stopped", StatusSleeping},
+		{"suspended", StatusSleeping},
+		{"sleeping", StatusSleeping},
+		{"destroyed", StatusDestroying},
+		{"destroying", StatusDestroying},
+		{"creating", StatusCreating},
+		{"", StatusSleeping},
 		{"unknown", "UNKNOWN"},
 	}
 

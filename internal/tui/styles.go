@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/JPM1118/slua/internal/sprites"
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
 	// Colors
@@ -40,37 +43,47 @@ var (
 	badgeStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("1")).
 			Bold(true)
+
+	mutedStyle = lipgloss.NewStyle().
+			Foreground(colorMuted)
+
+	// Pre-allocated status styles
+	statusStyleWorking     = lipgloss.NewStyle().Foreground(colorWorking)
+	statusStyleFinished    = lipgloss.NewStyle().Foreground(colorFinished)
+	statusStyleWaiting     = lipgloss.NewStyle().Foreground(colorWaiting).Bold(true)
+	statusStyleError       = lipgloss.NewStyle().Foreground(colorError).Bold(true)
+	statusStyleSleeping    = lipgloss.NewStyle().Foreground(colorSleeping)
+	statusStyleUnreachable = lipgloss.NewStyle().Foreground(colorUnreachable)
+	statusStyleDefault     = lipgloss.NewStyle().Foreground(colorMuted)
 )
 
 // statusStyle returns the appropriate style for a Sprite status.
 func statusStyle(status string) lipgloss.Style {
 	switch status {
-	case "WORKING":
-		return lipgloss.NewStyle().Foreground(colorWorking)
-	case "FINISHED":
-		return lipgloss.NewStyle().Foreground(colorFinished)
-	case "WAITING":
-		return lipgloss.NewStyle().Foreground(colorWaiting).Bold(true)
-	case "ERROR":
-		return lipgloss.NewStyle().Foreground(colorError).Bold(true)
-	case "SLEEPING":
-		return lipgloss.NewStyle().Foreground(colorSleeping)
-	case "UNREACHABLE":
-		return lipgloss.NewStyle().Foreground(colorUnreachable)
+	case sprites.StatusWorking:
+		return statusStyleWorking
+	case sprites.StatusFinished:
+		return statusStyleFinished
+	case sprites.StatusWaiting:
+		return statusStyleWaiting
+	case sprites.StatusError:
+		return statusStyleError
+	case sprites.StatusSleeping:
+		return statusStyleSleeping
+	case sprites.StatusUnreachable:
+		return statusStyleUnreachable
 	default:
-		return lipgloss.NewStyle().Foreground(colorMuted)
+		return statusStyleDefault
 	}
 }
 
 // statusLabel returns the display text for a status, including indicators.
 func statusLabel(status string) string {
 	switch status {
-	case "ERROR":
+	case sprites.StatusError:
 		return "ERROR !"
-	case "UNREACHABLE":
+	case sprites.StatusUnreachable:
 		return "UNREACHABLE ?"
-	case "FINISHED":
-		return "FINISHED"
 	default:
 		return status
 	}

@@ -21,3 +21,9 @@ slua
 # OS
 .DS_Store
 Thumbs.db
+
+# Credentials
+.env
+*.pem
+*.key
+credentials.json

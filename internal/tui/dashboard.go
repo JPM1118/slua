@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -62,7 +63,7 @@ func (d Dashboard) Init() tea.Cmd {
 
 func (d Dashboard) loadSprites() tea.Cmd {
 	return func() tea.Msg {
-		spriteList, err := d.cli.List()
+		spriteList, err := d.cli.List(context.Background())
 		return spritesLoadedMsg{sprites: spriteList, err: err}
 	}
 }
@@ -199,7 +200,7 @@ func (d Dashboard) renderHeader() string {
 	// Count attention-needing sprites
 	attention := 0
 	for _, s := range d.sprites {
-		if s.Status == "WAITING" || s.Status == "ERROR" {
+		if s.Status == sprites.StatusWaiting || s.Status == sprites.StatusError {
 			attention++
 		}
 	}
@@ -297,7 +298,7 @@ func (d Dashboard) renderSpriteList(height int) string {
 		line := prefix + name + styledStatus + uptime
 		if showActivity {
 			activity := activityText(s)
-			line += lipgloss.NewStyle().Foreground(colorMuted).Render(activity)
+			line += mutedStyle.Render(activity)
 		}
 
 		b.WriteString(line)
@@ -354,17 +355,17 @@ func padLines(content string, height int) string {
 
 func activityText(s sprites.Sprite) string {
 	switch s.Status {
-	case "WORKING":
+	case sprites.StatusWorking:
 		return "active"
-	case "FINISHED":
+	case sprites.StatusFinished:
 		return "completed"
-	case "WAITING":
+	case sprites.StatusWaiting:
 		return "needs input"
-	case "ERROR":
+	case sprites.StatusError:
 		return "failed"
-	case "SLEEPING":
+	case sprites.StatusSleeping:
 		return "idle"
-	case "UNREACHABLE":
+	case sprites.StatusUnreachable:
 		return "connection lost"
 	default:
 		return ""
