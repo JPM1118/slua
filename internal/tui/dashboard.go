@@ -32,7 +32,7 @@ type consoleFinishedMsg struct {
 
 // Dashboard is the main Bubble Tea model.
 type Dashboard struct {
-	cli        *sprites.CLI
+	cli        sprites.SpriteSource
 	sprites    []sprites.Sprite
 	cursor     int
 	width      int
@@ -43,7 +43,7 @@ type Dashboard struct {
 }
 
 // NewDashboard creates a new dashboard model.
-func NewDashboard(cli *sprites.CLI) Dashboard {
+func NewDashboard(cli sprites.SpriteSource) Dashboard {
 	return Dashboard{
 		cli:     cli,
 		loading: true,

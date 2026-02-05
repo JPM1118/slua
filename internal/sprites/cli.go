@@ -46,6 +46,8 @@ type CLI struct {
 	Org string
 }
 
+var _ SpriteSource = (*CLI)(nil)
+
 // spriteCmd builds a sprite command with org flag if set.
 func (c *CLI) spriteCmd(args ...string) *exec.Cmd {
 	if c.Org != "" {

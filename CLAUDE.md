@@ -28,6 +28,7 @@ Shell-out orchestrator pattern: the TUI suspends itself via `tea.ExecProcess` an
 - **Polling over WebSocket**: Background goroutine polls via `sprite exec` every 15s. No persistent WebSocket connections.
 - **CLI over SDK**: Shell out to `sprite` CLI rather than using sprites-go SDK. Inherits auth, handles edge cases.
 - **Modal input**: vim-style `/` to enter search mode. Single-char keybindings (`j`/`k`/`d`/`c`/`q`) active only in normal mode.
+- **Auto-checkpoint on commit**: Claude Code hook creates a Sprite checkpoint after every successful git commit.
 
 ## Terminology
 
