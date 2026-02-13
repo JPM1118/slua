@@ -3,9 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
+	"time"
 
-	"github.com/JPM1118/slua/internal/config"
 	"github.com/JPM1118/slua/internal/notify"
 	"github.com/JPM1118/slua/internal/poller"
 	"github.com/JPM1118/slua/internal/sprites"
@@ -27,25 +26,21 @@ func init() {
 }
 
 func runDashboard() error {
-	cfg, err := config.Load()
-	if err != nil {
-		log.Printf("config warning: %v (using defaults)", err)
-		cfg = config.Defaults()
-	}
-
 	cli := &sprites.CLI{Org: org}
 
 	p := poller.New(cli, poller.Config{
-		PollInterval:   cfg.Detection.PollInterval.Duration,
-		ExecTimeout:    cfg.Detection.ExecTimeout.Duration,
-		PromptPatterns: cfg.Detection.PromptPatterns,
-		MaxWorkers:     10,
+		PollInterval: 15 * time.Second,
+		ExecTimeout:  5 * time.Second,
+		PromptPatterns: []string{
+			"Y/n", "y/N", `\? `, "> $",
+			"Permission", "Allow", "Deny",
+		},
+		MaxWorkers: 10,
 	})
 
-	bell := notify.NewBell(
-		cfg.Notifications.BellDebounce.Duration,
-		cfg.Notifications.BellOnStates,
-	)
+	bell := notify.NewBell(30*time.Second, []string{
+		sprites.StatusWaiting, sprites.StatusError,
+	})
 	bar := notify.NewBar(20)
 
 	model := tui.NewDashboard(cli,

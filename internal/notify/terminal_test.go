@@ -59,22 +59,8 @@ func TestBell_Suspended(t *testing.T) {
 		t.Error("IsSuspended should be true")
 	}
 
-	b.Resume(now)
+	b.Resume()
 	if b.IsSuspended() {
 		t.Error("IsSuspended should be false after resume")
-	}
-}
-
-func TestBell_ShouldTrigger(t *testing.T) {
-	b := NewBell(30*time.Second, []string{"WAITING", "ERROR"})
-
-	if !b.ShouldTrigger("WAITING") {
-		t.Error("WAITING should trigger")
-	}
-	if !b.ShouldTrigger("ERROR") {
-		t.Error("ERROR should trigger")
-	}
-	if b.ShouldTrigger("WORKING") {
-		t.Error("WORKING should not trigger")
 	}
 }

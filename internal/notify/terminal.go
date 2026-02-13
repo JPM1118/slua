@@ -2,6 +2,7 @@ package notify
 
 import (
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -38,7 +39,7 @@ func (b *Bell) Ring(status string, now time.Time) bool {
 		return false
 	}
 
-	fmt.Print("\a")
+	fmt.Fprint(os.Stderr, "\a")
 	b.lastRing = now
 	return true
 }
@@ -49,20 +50,11 @@ func (b *Bell) Suspend() {
 }
 
 // Resume re-enables bell ringing.
-// Returns true if a bell should ring (attention states still exist).
-func (b *Bell) Resume(now time.Time) bool {
+func (b *Bell) Resume() {
 	b.suspended = false
-	// Caller should check if attention states exist and ring if so
-	return true
 }
 
 // IsSuspended returns whether the bell is currently suspended.
 func (b *Bell) IsSuspended() bool {
 	return b.suspended
-}
-
-// ShouldTrigger returns whether the given status would trigger a bell
-// (ignoring debounce and suspension).
-func (b *Bell) ShouldTrigger(status string) bool {
-	return b.triggerOn[status]
 }

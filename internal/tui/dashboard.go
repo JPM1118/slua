@@ -50,12 +50,13 @@ type Dashboard struct {
 	lastErr   string // transient error shown in notification bar
 
 	// Phase 2: polling and notifications
-	poll      *poller.Poller
-	pollerCh  <-chan poller.PollerUpdate
-	bell      *notify.Bell
-	notifyBar *notify.Bar
-	suspended bool      // true during shell-out
-	lastPoll  time.Time // time of last poller update
+	poll           *poller.Poller
+	pollerCh       <-chan poller.PollerUpdate
+	bell           *notify.Bell
+	notifyBar      *notify.Bar
+	suspended      bool      // true during shell-out
+	lastPoll       time.Time // time of last poller update
+	attentionCount int       // cached count of WAITING/ERROR sprites
 }
 
 // DashboardOption configures a Dashboard.
@@ -157,6 +158,7 @@ func (d Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if d.cursor >= len(d.sprites) {
 			d.cursor = max(0, len(d.sprites)-1)
 		}
+		d.updateAttentionCount()
 		return d, nil
 
 	case consoleFinishedMsg:
@@ -166,9 +168,9 @@ func (d Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Resume bell — ring if attention states still exist
 		if d.bell != nil {
-			d.bell.Resume(time.Now())
+			d.bell.Resume()
 			if d.hasAttentionSprites() {
-				d.bell.Ring("WAITING", time.Now())
+				d.bell.Ring(sprites.StatusWaiting, time.Now())
 			}
 		}
 		// Refresh and trigger immediate poll
@@ -181,6 +183,7 @@ func (d Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pollerUpdateMsg:
 		d.lastPoll = time.Now()
 		d.mergePollerStates(msg.states)
+		d.updateAttentionCount()
 		// Re-subscribe
 		var cmd tea.Cmd
 		if d.pollerCh != nil {
@@ -218,13 +221,18 @@ func (d *Dashboard) mergePollerStates(states map[string]poller.SpriteState) {
 	}
 }
 
-func (d Dashboard) hasAttentionSprites() bool {
+func (d *Dashboard) updateAttentionCount() {
+	count := 0
 	for _, s := range d.sprites {
 		if s.Status == sprites.StatusWaiting || s.Status == sprites.StatusError {
-			return true
+			count++
 		}
 	}
-	return false
+	d.attentionCount = count
+}
+
+func (d Dashboard) hasAttentionSprites() bool {
+	return d.attentionCount > 0
 }
 
 func (d Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -291,6 +299,7 @@ func (d Dashboard) View() string {
 	}
 
 	var b strings.Builder
+	b.Grow(d.height * 100)
 
 	// Header
 	b.WriteString(d.renderHeader())
@@ -325,17 +334,9 @@ func (d Dashboard) View() string {
 func (d Dashboard) renderHeader() string {
 	title := headerStyle.Render("Slua Sí")
 
-	// Count attention-needing sprites
-	attention := 0
-	for _, s := range d.sprites {
-		if s.Status == sprites.StatusWaiting || s.Status == sprites.StatusError {
-			attention++
-		}
-	}
-
 	right := ""
-	if attention > 0 {
-		right = badgeStyle.Render(fmt.Sprintf("[%d need attention]", attention))
+	if d.attentionCount > 0 {
+		right = badgeStyle.Render(fmt.Sprintf("[%d need attention]", d.attentionCount))
 	}
 
 	gap := d.width - lipgloss.Width(title) - lipgloss.Width(right)
@@ -467,20 +468,22 @@ func (d Dashboard) renderStatusBar() string {
 // Helpers
 
 func padRight(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
+	runes := []rune(s)
+	if len(runes) >= width {
+		return string(runes[:width])
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-len(runes))
 }
 
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
 	if maxLen <= 1 {
-		return s[:maxLen]
+		return string(runes[:maxLen])
 	}
-	return s[:maxLen-1] + "…"
+	return string(runes[:maxLen-1]) + "…"
 }
 
 func padLines(content string, height int) string {

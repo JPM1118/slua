@@ -27,10 +27,9 @@ type Poller struct {
 	cfg      Config
 	script   string
 	states   map[string]*SpriteState
-	updateCh chan PollerUpdate
+	updateCh  chan PollerUpdate
 	triggerCh chan struct{}
-	stopOnce sync.Once
-	mu       sync.Mutex
+	mu        sync.Mutex
 }
 
 // New creates a poller. Call Start() to begin polling.
@@ -95,15 +94,30 @@ func (p *Poller) pollCycle(ctx context.Context) {
 		return // Silently skip cycle on list failure
 	}
 
-	// Filter to running Sprites only
+	// Build set of known sprite names for pruning
+	knownNames := make(map[string]bool, len(spriteList))
+	for _, s := range spriteList {
+		knownNames[s.Name] = true
+	}
+
+	// Filter to running Sprites only (normalizeStatus maps RUNNING/STARTED → WORKING)
 	var running []sprites.Sprite
 	for _, s := range spriteList {
-		if s.Status == sprites.StatusWorking || s.Status == "RUNNING" || s.Status == "STARTED" {
+		if s.Status == sprites.StatusWorking {
 			running = append(running, s)
 		}
 	}
 
-	// If no running sprites, still update with any existing states cleared
+	// Prune state entries for sprites no longer in the list
+	p.mu.Lock()
+	for name := range p.states {
+		if !knownNames[name] {
+			delete(p.states, name)
+		}
+	}
+	p.mu.Unlock()
+
+	// If no running sprites, still update with current states
 	if len(running) == 0 {
 		p.emitUpdate()
 		return
@@ -158,9 +172,15 @@ func (p *Poller) pollCycle(ctx context.Context) {
 		close(results)
 	}()
 
-	// Collect results
-	p.mu.Lock()
+	// Collect results without holding the lock
+	var collected []result
 	for r := range results {
+		collected = append(collected, r)
+	}
+
+	// Apply results under a brief lock
+	p.mu.Lock()
+	for _, r := range collected {
 		state := p.states[r.name]
 		if r.err != nil {
 			state.RecordFailure(p.cfg.PollInterval, now)
@@ -182,18 +202,9 @@ func (p *Poller) emitUpdate() {
 	}
 	p.mu.Unlock()
 
-	// Non-blocking send — if channel is full, drop oldest
+	// Non-blocking send — drop if channel is full (consumer will get the next one)
 	select {
 	case p.updateCh <- PollerUpdate{States: snapshot}:
 	default:
-		// Drain one and resend
-		select {
-		case <-p.updateCh:
-		default:
-		}
-		select {
-		case p.updateCh <- PollerUpdate{States: snapshot}:
-		default:
-		}
 	}
 }

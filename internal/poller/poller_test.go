@@ -2,47 +2,19 @@ package poller
 
 import (
 	"context"
-	"os/exec"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/JPM1118/slua/internal/sprites"
+	"github.com/JPM1118/slua/internal/testutil"
 )
 
-// mockSource implements sprites.SpriteSource for poller testing.
-type mockSource struct {
-	mu         sync.Mutex
-	sprites    []sprites.Sprite
-	listErr    error
-	execResult string
-	execErr    error
-	execCalls  int
-}
-
-func (m *mockSource) List(_ context.Context) ([]sprites.Sprite, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.sprites, m.listErr
-}
-
-func (m *mockSource) ConsoleCmd(name string) *exec.Cmd {
-	return exec.Command("echo", name)
-}
-
-func (m *mockSource) ExecStatus(_ context.Context, _ string, _ string) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.execCalls++
-	return m.execResult, m.execErr
-}
-
 func TestPoller_ReceivesUpdate(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "web-app", Status: sprites.StatusWorking},
 		},
-		execResult: "WORKING",
+		ExecResult: "WORKING",
 	}
 
 	p := New(src, Config{
@@ -73,11 +45,11 @@ func TestPoller_ReceivesUpdate(t *testing.T) {
 }
 
 func TestPoller_DetectsTransition(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "web-app", Status: sprites.StatusWorking},
 		},
-		execResult: "WORKING",
+		ExecResult: "WORKING",
 	}
 
 	p := New(src, Config{
@@ -100,9 +72,7 @@ func TestPoller_DetectsTransition(t *testing.T) {
 	}
 
 	// Change exec result to WAITING
-	src.mu.Lock()
-	src.execResult = "WAITING"
-	src.mu.Unlock()
+	src.SetExecResult("WAITING")
 
 	// Wait for second update with transition
 	select {
@@ -120,11 +90,11 @@ func TestPoller_DetectsTransition(t *testing.T) {
 }
 
 func TestPoller_TriggerNow(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "test", Status: sprites.StatusWorking},
 		},
-		execResult: "FINISHED",
+		ExecResult: "FINISHED",
 	}
 
 	p := New(src, Config{
@@ -158,12 +128,12 @@ func TestPoller_TriggerNow(t *testing.T) {
 }
 
 func TestPoller_SkipsNonRunningSprites(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "sleeping", Status: sprites.StatusSleeping},
 			{Name: "creating", Status: sprites.StatusCreating},
 		},
-		execResult: "WORKING",
+		ExecResult: "WORKING",
 	}
 
 	p := New(src, Config{
@@ -185,21 +155,18 @@ func TestPoller_SkipsNonRunningSprites(t *testing.T) {
 		t.Fatal("timed out waiting for update")
 	}
 
-	src.mu.Lock()
-	calls := src.execCalls
-	src.mu.Unlock()
-
+	calls := src.GetExecCalls()
 	if calls != 0 {
 		t.Errorf("ExecStatus called %d times, want 0 (no running sprites)", calls)
 	}
 }
 
 func TestPoller_Stop(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "test", Status: sprites.StatusWorking},
 		},
-		execResult: "WORKING",
+		ExecResult: "WORKING",
 	}
 
 	p := New(src, Config{

@@ -2,6 +2,8 @@ package poller
 
 import (
 	"time"
+
+	"github.com/JPM1118/slua/internal/sprites"
 )
 
 const (
@@ -59,7 +61,7 @@ func (s *SpriteState) RecordFailure(baseInterval time.Duration, now time.Time) {
 	// After threshold, mark as UNREACHABLE
 	if s.ConsecFails >= UnreachableThreshold {
 		s.PreviousStatus = s.Status
-		s.Status = "UNREACHABLE"
+		s.Status = sprites.StatusUnreachable
 	}
 }
 
