@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/JPM1118/slua/internal/notify"
+	"github.com/JPM1118/slua/internal/poller"
 	"github.com/JPM1118/slua/internal/sprites"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -31,24 +34,65 @@ type consoleFinishedMsg struct {
 	err error
 }
 
+type pollerUpdateMsg struct {
+	states map[string]poller.SpriteState
+}
+
 // Dashboard is the main Bubble Tea model.
 type Dashboard struct {
-	cli        sprites.SpriteSource
-	sprites    []sprites.Sprite
-	cursor     int
-	width      int
-	height     int
-	err        error
-	loading    bool
-	lastErr    string // transient error shown in notification bar
+	cli       sprites.SpriteSource
+	sprites   []sprites.Sprite
+	cursor    int
+	width     int
+	height    int
+	err       error
+	loading   bool
+	lastErr   string // transient error shown in notification bar
+
+	// Phase 2: polling and notifications
+	poll      *poller.Poller
+	pollerCh  <-chan poller.PollerUpdate
+	bell      *notify.Bell
+	notifyBar *notify.Bar
+	suspended bool      // true during shell-out
+	lastPoll  time.Time // time of last poller update
+}
+
+// DashboardOption configures a Dashboard.
+type DashboardOption func(*Dashboard)
+
+// WithPoller sets the background state poller.
+func WithPoller(p *poller.Poller) DashboardOption {
+	return func(d *Dashboard) {
+		d.poll = p
+		d.pollerCh = p.Updates()
+	}
+}
+
+// WithBell sets the terminal bell for notifications.
+func WithBell(b *notify.Bell) DashboardOption {
+	return func(d *Dashboard) {
+		d.bell = b
+	}
+}
+
+// WithNotifyBar sets the notification bar.
+func WithNotifyBar(b *notify.Bar) DashboardOption {
+	return func(d *Dashboard) {
+		d.notifyBar = b
+	}
 }
 
 // NewDashboard creates a new dashboard model.
-func NewDashboard(cli sprites.SpriteSource) Dashboard {
-	return Dashboard{
+func NewDashboard(cli sprites.SpriteSource, opts ...DashboardOption) Dashboard {
+	d := Dashboard{
 		cli:     cli,
 		loading: true,
 	}
+	for _, opt := range opts {
+		opt(&d)
+	}
+	return d
 }
 
 // Err returns any fatal error that occurred.
@@ -56,9 +100,24 @@ func (d Dashboard) Err() error {
 	return d.err
 }
 
-// Init loads the initial sprite list.
+// Init loads the initial sprite list and subscribes to the poller.
 func (d Dashboard) Init() tea.Cmd {
-	return d.loadSprites()
+	cmds := []tea.Cmd{d.loadSprites()}
+	if d.pollerCh != nil {
+		cmds = append(cmds, d.subscribeToPoller())
+	}
+	return tea.Batch(cmds...)
+}
+
+func (d Dashboard) subscribeToPoller() tea.Cmd {
+	ch := d.pollerCh
+	return func() tea.Msg {
+		update, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return pollerUpdateMsg{states: update.States}
+	}
 }
 
 func (d Dashboard) loadSprites() tea.Cmd {
@@ -101,14 +160,71 @@ func (d Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return d, nil
 
 	case consoleFinishedMsg:
+		d.suspended = false
 		if msg.err != nil {
 			d.lastErr = fmt.Sprintf("Console error: %s", msg.err.Error())
 		}
-		// Refresh after returning from console
-		return d, d.loadSprites()
+		// Resume bell — ring if attention states still exist
+		if d.bell != nil {
+			d.bell.Resume(time.Now())
+			if d.hasAttentionSprites() {
+				d.bell.Ring("WAITING", time.Now())
+			}
+		}
+		// Refresh and trigger immediate poll
+		cmds := []tea.Cmd{d.loadSprites()}
+		if d.poll != nil {
+			d.poll.TriggerNow()
+		}
+		return d, tea.Batch(cmds...)
+
+	case pollerUpdateMsg:
+		d.lastPoll = time.Now()
+		d.mergePollerStates(msg.states)
+		// Re-subscribe
+		var cmd tea.Cmd
+		if d.pollerCh != nil {
+			cmd = d.subscribeToPoller()
+		}
+		return d, cmd
 	}
 
 	return d, nil
+}
+
+func (d *Dashboard) mergePollerStates(states map[string]poller.SpriteState) {
+	now := time.Now()
+	for i, s := range d.sprites {
+		if ps, ok := states[s.Name]; ok {
+			if ps.Status != "" {
+				d.sprites[i].Status = ps.Status
+			}
+			// Push notification on transitions
+			if ps.IsTransition() {
+				if d.notifyBar != nil {
+					d.notifyBar.Push(notify.Notification{
+						SpriteName: s.Name,
+						OldStatus:  ps.PreviousStatus,
+						NewStatus:  ps.Status,
+						Timestamp:  now,
+					})
+				}
+				// Ring bell for attention states
+				if d.bell != nil {
+					d.bell.Ring(ps.Status, now)
+				}
+			}
+		}
+	}
+}
+
+func (d Dashboard) hasAttentionSprites() bool {
+	for _, s := range d.sprites {
+		if s.Status == sprites.StatusWaiting || s.Status == sprites.StatusError {
+			return true
+		}
+	}
+	return false
 }
 
 func (d Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -133,6 +249,15 @@ func (d Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return d, nil
 		}
 		s := d.sprites[d.cursor]
+		// Clear notification for WAITING sprite on connect
+		if d.notifyBar != nil {
+			d.notifyBar.ClearForSprite(s.Name)
+		}
+		// Suspend bell during shell-out
+		d.suspended = true
+		if d.bell != nil {
+			d.bell.Suspend()
+		}
 		c := d.cli.ConsoleCmd(s.Name)
 		return d, tea.ExecProcess(c, func(err error) tea.Msg {
 			return consoleFinishedMsg{err: err}
@@ -140,6 +265,9 @@ func (d Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		d.loading = true
+		if d.poll != nil {
+			d.poll.TriggerNow()
+		}
 		return d, d.loadSprites()
 
 	case "G":
@@ -225,6 +353,10 @@ func (d Dashboard) renderSubheader() string {
 	}
 	if d.loading {
 		status = "Loading..."
+	}
+	if !d.lastPoll.IsZero() {
+		ago := time.Since(d.lastPoll).Truncate(time.Second)
+		status += fmt.Sprintf(" · Last poll: %s ago", ago)
 	}
 	return subheaderStyle.Render(status)
 }
@@ -315,8 +447,15 @@ func (d Dashboard) renderSpriteList(height int) string {
 }
 
 func (d Dashboard) renderNotificationBar() string {
+	// Errors take priority over notifications
 	if d.lastErr != "" {
 		return notificationBarStyle.Render("  " + truncate(d.lastErr, d.width-4))
+	}
+	if d.notifyBar != nil {
+		content := d.notifyBar.Render(d.width-4, time.Now())
+		if content != "" {
+			return notificationBarStyle.Render("  " + content)
+		}
 	}
 	return notificationBarStyle.Render("")
 }

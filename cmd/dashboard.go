@@ -1,8 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"log"
 
+	"github.com/JPM1118/slua/internal/config"
+	"github.com/JPM1118/slua/internal/notify"
+	"github.com/JPM1118/slua/internal/poller"
 	"github.com/JPM1118/slua/internal/sprites"
 	"github.com/JPM1118/slua/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,12 +27,41 @@ func init() {
 }
 
 func runDashboard() error {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("config warning: %v (using defaults)", err)
+		cfg = config.Defaults()
+	}
+
 	cli := &sprites.CLI{Org: org}
 
-	model := tui.NewDashboard(cli)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := poller.New(cli, poller.Config{
+		PollInterval:   cfg.Detection.PollInterval.Duration,
+		ExecTimeout:    cfg.Detection.ExecTimeout.Duration,
+		PromptPatterns: cfg.Detection.PromptPatterns,
+		MaxWorkers:     10,
+	})
 
-	finalModel, err := p.Run()
+	bell := notify.NewBell(
+		cfg.Notifications.BellDebounce.Duration,
+		cfg.Notifications.BellOnStates,
+	)
+	bar := notify.NewBar(20)
+
+	model := tui.NewDashboard(cli,
+		tui.WithPoller(p),
+		tui.WithBell(bell),
+		tui.WithNotifyBar(bar),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.Start(ctx)
+
+	program := tea.NewProgram(model, tea.WithAltScreen())
+
+	finalModel, err := program.Run()
+	cancel() // Stop poller
 	if err != nil {
 		return fmt.Errorf("dashboard: %w", err)
 	}

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JPM1118/slua/internal/notify"
+	"github.com/JPM1118/slua/internal/poller"
 	"github.com/JPM1118/slua/internal/sprites"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -336,5 +338,134 @@ func TestUpdate_RefreshKey(t *testing.T) {
 
 	if d.loading {
 		t.Errorf("after refresh completes: loading should be false")
+	}
+}
+
+func TestUpdate_PollerUpdateMergesState(t *testing.T) {
+	src := &mockSource{
+		sprites: []sprites.Sprite{
+			{Name: "web-app", Status: "WORKING"},
+			{Name: "api-dev", Status: "SLEEPING"},
+		},
+	}
+	d := testDashboard(src, 100, 30)
+	bar := notify.NewBar(20)
+	d.notifyBar = bar
+
+	// Simulate a poller update with state transition
+	msg := pollerUpdateMsg{
+		states: map[string]poller.SpriteState{
+			"web-app": {
+				Name:           "web-app",
+				Status:         "WAITING",
+				PreviousStatus: "WORKING",
+			},
+		},
+	}
+
+	updated, _ := d.Update(msg)
+	d = updated.(Dashboard)
+
+	// Check state was merged
+	if d.sprites[0].Status != "WAITING" {
+		t.Errorf("web-app status = %q, want WAITING", d.sprites[0].Status)
+	}
+	// api-dev should be unchanged
+	if d.sprites[1].Status != "SLEEPING" {
+		t.Errorf("api-dev status = %q, want SLEEPING", d.sprites[1].Status)
+	}
+	// Notification should have been pushed
+	if bar.Len() != 1 {
+		t.Errorf("notification bar should have 1 item, got %d", bar.Len())
+	}
+}
+
+func TestUpdate_PollerUpdateSetsLastPoll(t *testing.T) {
+	src := &mockSource{
+		sprites: []sprites.Sprite{{Name: "test", Status: "WORKING"}},
+	}
+	d := testDashboard(src, 100, 30)
+
+	if !d.lastPoll.IsZero() {
+		t.Fatal("lastPoll should be zero initially")
+	}
+
+	msg := pollerUpdateMsg{
+		states: map[string]poller.SpriteState{
+			"test": {Name: "test", Status: "WORKING"},
+		},
+	}
+
+	updated, _ := d.Update(msg)
+	d = updated.(Dashboard)
+
+	if d.lastPoll.IsZero() {
+		t.Error("lastPoll should be set after poller update")
+	}
+}
+
+func TestUpdate_EnterSuspendsBell(t *testing.T) {
+	src := &mockSource{
+		sprites: []sprites.Sprite{{Name: "my-sprite", Status: "WAITING"}},
+	}
+	d := testDashboard(src, 100, 30)
+
+	bell := notify.NewBell(30*time.Second, []string{"WAITING"})
+	d.bell = bell
+
+	bar := notify.NewBar(20)
+	bar.Push(notify.Notification{SpriteName: "my-sprite", OldStatus: "WORKING", NewStatus: "WAITING", Timestamp: time.Now()})
+	d.notifyBar = bar
+
+	// Press enter to connect
+	updated, _ := d.Update(keyMsg("enter"))
+	d = updated.(Dashboard)
+
+	if !d.suspended {
+		t.Error("dashboard should be suspended after enter")
+	}
+	if !bell.IsSuspended() {
+		t.Error("bell should be suspended during shell-out")
+	}
+	// Notification for the connected sprite should be cleared
+	if bar.Len() != 0 {
+		t.Errorf("notification bar should be empty after connecting to sprite, got %d", bar.Len())
+	}
+}
+
+func TestView_NotificationBarShowsTransitions(t *testing.T) {
+	src := &mockSource{
+		sprites: []sprites.Sprite{{Name: "web-app", Status: "WORKING"}},
+	}
+	d := testDashboard(src, 100, 30)
+
+	bar := notify.NewBar(20)
+	bar.Push(notify.Notification{
+		SpriteName: "web-app",
+		OldStatus:  "WORKING",
+		NewStatus:  "WAITING",
+		Timestamp:  time.Now().Add(-30 * time.Second),
+	})
+	d.notifyBar = bar
+
+	view := d.View()
+	if !strings.Contains(view, "web-app") {
+		t.Error("notification bar should show sprite name")
+	}
+	if !strings.Contains(view, "WAITING") {
+		t.Error("notification bar should show new status")
+	}
+}
+
+func TestView_SubheaderShowsLastPoll(t *testing.T) {
+	src := &mockSource{
+		sprites: []sprites.Sprite{{Name: "test"}},
+	}
+	d := testDashboard(src, 100, 30)
+	d.lastPoll = time.Now().Add(-5 * time.Second)
+
+	view := d.View()
+	if !strings.Contains(view, "Last poll:") {
+		t.Error("subheader should show last poll time")
 	}
 }
