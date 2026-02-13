@@ -1,33 +1,20 @@
 package tui
 
 import (
-	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/JPM1118/slua/internal/notify"
+	"github.com/JPM1118/slua/internal/poller"
 	"github.com/JPM1118/slua/internal/sprites"
+	"github.com/JPM1118/slua/internal/testutil"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// mockSource implements sprites.SpriteSource for testing.
-type mockSource struct {
-	sprites []sprites.Sprite
-	err     error
-}
-
-func (m *mockSource) List(_ context.Context) ([]sprites.Sprite, error) {
-	return m.sprites, m.err
-}
-
-func (m *mockSource) ConsoleCmd(name string) *exec.Cmd {
-	return exec.Command("echo", name)
-}
-
 // testDashboard creates a Dashboard with mock data already loaded.
-func testDashboard(src sprites.SpriteSource, width, height int) Dashboard {
+func testDashboard(src *testutil.MockSource, width, height int) Dashboard {
 	d := NewDashboard(src)
 	d.width = width
 	d.height = height
@@ -54,8 +41,8 @@ func keyMsg(s string) tea.KeyMsg {
 
 func TestView_ShowsAllSprites(t *testing.T) {
 	now := time.Now()
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "web-app", Status: "WORKING", CreatedAt: now.Add(-2 * time.Hour)},
 			{Name: "api-dev", Status: "SLEEPING", CreatedAt: now.Add(-45 * time.Minute)},
 			{Name: "docs", Status: "FINISHED", CreatedAt: now.Add(-30 * time.Minute)},
@@ -82,8 +69,8 @@ func TestView_ShowsAllSprites(t *testing.T) {
 }
 
 func TestUpdate_JKNavigation(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "first"},
 			{Name: "second"},
 			{Name: "third"},
@@ -139,8 +126,8 @@ func TestUpdate_JKNavigation(t *testing.T) {
 }
 
 func TestUpdate_GAndgNavigation(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"},
 		},
 	}
@@ -162,7 +149,7 @@ func TestUpdate_GAndgNavigation(t *testing.T) {
 }
 
 func TestUpdate_QuitOnQ(t *testing.T) {
-	src := &mockSource{sprites: []sprites.Sprite{{Name: "test"}}}
+	src := &testutil.MockSource{Sprites: []sprites.Sprite{{Name: "test"}}}
 	d := testDashboard(src, 100, 30)
 
 	_, cmd := d.Update(keyMsg("q"))
@@ -177,8 +164,8 @@ func TestUpdate_QuitOnQ(t *testing.T) {
 }
 
 func TestUpdate_EnterReturnsExec(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{{Name: "my-sprite"}},
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{{Name: "my-sprite"}},
 	}
 	d := testDashboard(src, 100, 30)
 
@@ -189,7 +176,7 @@ func TestUpdate_EnterReturnsExec(t *testing.T) {
 }
 
 func TestUpdate_EnterOnEmptyList(t *testing.T) {
-	src := &mockSource{sprites: []sprites.Sprite{}}
+	src := &testutil.MockSource{Sprites: []sprites.Sprite{}}
 	d := testDashboard(src, 100, 30)
 
 	_, cmd := d.Update(keyMsg("enter"))
@@ -199,7 +186,7 @@ func TestUpdate_EnterOnEmptyList(t *testing.T) {
 }
 
 func TestView_TerminalTooSmall(t *testing.T) {
-	src := &mockSource{sprites: []sprites.Sprite{{Name: "test"}}}
+	src := &testutil.MockSource{Sprites: []sprites.Sprite{{Name: "test"}}}
 	d := testDashboard(src, 40, 10)
 	view := d.View()
 
@@ -209,7 +196,7 @@ func TestView_TerminalTooSmall(t *testing.T) {
 }
 
 func TestView_EmptySprites(t *testing.T) {
-	src := &mockSource{sprites: []sprites.Sprite{}}
+	src := &testutil.MockSource{Sprites: []sprites.Sprite{}}
 	d := testDashboard(src, 100, 30)
 	view := d.View()
 
@@ -219,7 +206,7 @@ func TestView_EmptySprites(t *testing.T) {
 }
 
 func TestView_LoadingState(t *testing.T) {
-	src := &mockSource{sprites: []sprites.Sprite{}}
+	src := &testutil.MockSource{Sprites: []sprites.Sprite{}}
 	d := NewDashboard(src)
 	d.width = 100
 	d.height = 30
@@ -232,7 +219,7 @@ func TestView_LoadingState(t *testing.T) {
 }
 
 func TestView_ErrorInNotificationBar(t *testing.T) {
-	src := &mockSource{err: fmt.Errorf("auth expired")}
+	src := &testutil.MockSource{ListErr: fmt.Errorf("auth expired")}
 	d := testDashboard(src, 100, 30)
 	view := d.View()
 
@@ -242,8 +229,8 @@ func TestView_ErrorInNotificationBar(t *testing.T) {
 }
 
 func TestView_AttentionBadge(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "ok", Status: "WORKING"},
 			{Name: "waiting", Status: "WAITING"},
 			{Name: "broken", Status: "ERROR"},
@@ -258,8 +245,8 @@ func TestView_AttentionBadge(t *testing.T) {
 }
 
 func TestView_ResponsiveActivityColumn(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "worker", Status: "WORKING"},
 		},
 	}
@@ -283,8 +270,8 @@ func TestView_ResponsiveActivityColumn(t *testing.T) {
 }
 
 func TestView_CursorIndicator(t *testing.T) {
-	src := &mockSource{
-		sprites: []sprites.Sprite{
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
 			{Name: "first-sprite"},
 			{Name: "second-sprite"},
 		},
@@ -298,7 +285,7 @@ func TestView_CursorIndicator(t *testing.T) {
 }
 
 func TestUpdate_WindowResize(t *testing.T) {
-	src := &mockSource{sprites: []sprites.Sprite{{Name: "test"}}}
+	src := &testutil.MockSource{Sprites: []sprites.Sprite{{Name: "test"}}}
 	d := testDashboard(src, 100, 30)
 
 	updated, _ := d.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -310,7 +297,7 @@ func TestUpdate_WindowResize(t *testing.T) {
 }
 
 func TestUpdate_RefreshKey(t *testing.T) {
-	src := &mockSource{sprites: []sprites.Sprite{{Name: "test"}}}
+	src := &testutil.MockSource{Sprites: []sprites.Sprite{{Name: "test"}}}
 	d := testDashboard(src, 100, 30)
 
 	updated, cmd := d.Update(keyMsg("r"))
@@ -330,5 +317,134 @@ func TestUpdate_RefreshKey(t *testing.T) {
 
 	if d.loading {
 		t.Errorf("after refresh completes: loading should be false")
+	}
+}
+
+func TestUpdate_PollerUpdateMergesState(t *testing.T) {
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{
+			{Name: "web-app", Status: "WORKING"},
+			{Name: "api-dev", Status: "SLEEPING"},
+		},
+	}
+	d := testDashboard(src, 100, 30)
+	bar := notify.NewBar(20)
+	d.notifyBar = bar
+
+	// Simulate a poller update with state transition
+	msg := pollerUpdateMsg{
+		states: map[string]poller.SpriteState{
+			"web-app": {
+				Name:           "web-app",
+				Status:         "WAITING",
+				PreviousStatus: "WORKING",
+			},
+		},
+	}
+
+	updated, _ := d.Update(msg)
+	d = updated.(Dashboard)
+
+	// Check state was merged
+	if d.sprites[0].Status != "WAITING" {
+		t.Errorf("web-app status = %q, want WAITING", d.sprites[0].Status)
+	}
+	// api-dev should be unchanged
+	if d.sprites[1].Status != "SLEEPING" {
+		t.Errorf("api-dev status = %q, want SLEEPING", d.sprites[1].Status)
+	}
+	// Notification should have been pushed
+	if bar.Len() != 1 {
+		t.Errorf("notification bar should have 1 item, got %d", bar.Len())
+	}
+}
+
+func TestUpdate_PollerUpdateSetsLastPoll(t *testing.T) {
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{{Name: "test", Status: "WORKING"}},
+	}
+	d := testDashboard(src, 100, 30)
+
+	if !d.lastPoll.IsZero() {
+		t.Fatal("lastPoll should be zero initially")
+	}
+
+	msg := pollerUpdateMsg{
+		states: map[string]poller.SpriteState{
+			"test": {Name: "test", Status: "WORKING"},
+		},
+	}
+
+	updated, _ := d.Update(msg)
+	d = updated.(Dashboard)
+
+	if d.lastPoll.IsZero() {
+		t.Error("lastPoll should be set after poller update")
+	}
+}
+
+func TestUpdate_EnterSuspendsBell(t *testing.T) {
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{{Name: "my-sprite", Status: "WAITING"}},
+	}
+	d := testDashboard(src, 100, 30)
+
+	bell := notify.NewBell(30*time.Second, []string{"WAITING"})
+	d.bell = bell
+
+	bar := notify.NewBar(20)
+	bar.Push(notify.Notification{SpriteName: "my-sprite", OldStatus: "WORKING", NewStatus: "WAITING", Timestamp: time.Now()})
+	d.notifyBar = bar
+
+	// Press enter to connect
+	updated, _ := d.Update(keyMsg("enter"))
+	d = updated.(Dashboard)
+
+	if !d.suspended {
+		t.Error("dashboard should be suspended after enter")
+	}
+	if !bell.IsSuspended() {
+		t.Error("bell should be suspended during shell-out")
+	}
+	// Notification for the connected sprite should be cleared
+	if bar.Len() != 0 {
+		t.Errorf("notification bar should be empty after connecting to sprite, got %d", bar.Len())
+	}
+}
+
+func TestView_NotificationBarShowsTransitions(t *testing.T) {
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{{Name: "web-app", Status: "WORKING"}},
+	}
+	d := testDashboard(src, 100, 30)
+
+	bar := notify.NewBar(20)
+	bar.Push(notify.Notification{
+		SpriteName: "web-app",
+		OldStatus:  "WORKING",
+		NewStatus:  "WAITING",
+		Timestamp:  time.Now().Add(-30 * time.Second),
+	})
+	d.notifyBar = bar
+
+	view := d.View()
+	if !strings.Contains(view, "web-app") {
+		t.Error("notification bar should show sprite name")
+	}
+	if !strings.Contains(view, "WAITING") {
+		t.Error("notification bar should show new status")
+	}
+}
+
+func TestView_SubheaderShowsLastPoll(t *testing.T) {
+	src := &testutil.MockSource{
+		Sprites: []sprites.Sprite{{Name: "test"}},
+	}
+	d := testDashboard(src, 100, 30)
+	d.lastPoll = time.Now().Add(-5 * time.Second)
+
+	view := d.View()
+	if !strings.Contains(view, "Last poll:") {
+		t.Error("subheader should show last poll time")
 	}
 }

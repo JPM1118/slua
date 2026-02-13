@@ -181,6 +181,24 @@ func (c *CLI) ConsoleCmd(name string) *exec.Cmd {
 	return c.spriteCmd(context.Background(), "console", "-s", name)
 }
 
+// ExecStatus runs a status detection script on a Sprite via `sprite exec`.
+func (c *CLI) ExecStatus(ctx context.Context, name string, script string) (string, error) {
+	cmd := c.spriteCmd(ctx, "exec", "-s", name, "--", "sh", "-c", script)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("sprite exec %s: %s", name, errMsg)
+	}
+
+	return strings.TrimSpace(stdout.String()), nil
+}
+
 // CheckSpriteCLI verifies that the sprite CLI is installed and accessible.
 func CheckSpriteCLI() error {
 	_, err := exec.LookPath("sprite")
