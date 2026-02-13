@@ -10,4 +10,5 @@ import (
 type SpriteSource interface {
 	List(ctx context.Context) ([]Sprite, error)
 	ConsoleCmd(name string) *exec.Cmd
+	ExecStatus(ctx context.Context, name string, script string) (string, error)
 }

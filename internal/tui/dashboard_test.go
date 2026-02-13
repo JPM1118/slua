@@ -14,8 +14,10 @@ import (
 
 // mockSource implements sprites.SpriteSource for testing.
 type mockSource struct {
-	sprites []sprites.Sprite
-	err     error
+	sprites    []sprites.Sprite
+	err        error
+	execResult string
+	execErr    error
 }
 
 func (m *mockSource) List(_ context.Context) ([]sprites.Sprite, error) {
@@ -24,6 +26,10 @@ func (m *mockSource) List(_ context.Context) ([]sprites.Sprite, error) {
 
 func (m *mockSource) ConsoleCmd(name string) *exec.Cmd {
 	return exec.Command("echo", name)
+}
+
+func (m *mockSource) ExecStatus(_ context.Context, _ string, _ string) (string, error) {
+	return m.execResult, m.execErr
 }
 
 // testDashboard creates a Dashboard with mock data already loaded.
